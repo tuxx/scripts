@@ -11,7 +11,8 @@
 # ==========================================================================
 
 # Define log directory and create it if it doesn't exist
-LOG_DIR="$HOME"
+LOG_DIR="$HOME/.logs"
+mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/arch-update-$(date +"%Y%m%d_%H%M%S").log"
 
 # Default behavior: ask for confirmations
@@ -39,9 +40,10 @@ for arg in "$@"; do
     esac
 done
 
-# Remove old log files if not skipped
+# Remove old log files efficiently (limit search to the log directory)
 if [ "$SKIP_LOG_CLEAN" = false ]; then
-    OLD_LOGS=$(find "$LOG_DIR" -name "arch-update-*.log" -mtime +14)
+    OLD_LOGS=$(find "$LOG_DIR" -maxdepth 1 -name "arch-update-*.log" -mtime +14)
+
     if [[ -n "$OLD_LOGS" ]]; then
         echo "The following log files are older than 14 days and can be removed:"
         echo "$OLD_LOGS"
@@ -49,7 +51,7 @@ if [ "$SKIP_LOG_CLEAN" = false ]; then
             read -p "Do you want to remove them? (y/N): " DELETE_LOGS
         fi
         if [ "$SKIP_CONFIRM" = true ] || [[ "$DELETE_LOGS" =~ ^[Yy]$ ]]; then
-            find "$LOG_DIR" -name "arch-update-*.log" -mtime +14 -delete
+            find "$LOG_DIR" -maxdepth 1 -name "arch-update-*.log" -mtime +14 -delete
             echo "Old log files removed."
         else
             echo "Old log files kept."
