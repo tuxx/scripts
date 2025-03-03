@@ -1,0 +1,109 @@
+#!/bin/bash
+# Update arch with yay non-interactive and keep logs.
+#
+# # ========================== Command-line Options ========================
+# | Option         | Description                                           |
+# |----------------|-------------------------------------------------------|
+# | -y, --yes      | Skip all confirmation prompts (auto-approve updates,  |
+# |                | log cleanup, and orphan removal).                     |
+# | --no-log-clean | Skip old log file cleanup.                            |
+# | --no-orphans   | Skip orphan package removal.                          |
+# ==========================================================================
+
+# Define log directory and create it if it doesn't exist
+LOG_DIR="$HOME"
+LOG_FILE="$LOG_DIR/arch-update-$(date +"%Y%m%d_%H%M%S").log"
+
+# Default behavior: ask for confirmations
+SKIP_CONFIRM=false
+SKIP_LOG_CLEAN=false
+SKIP_ORPHANS=false
+
+# Parse command-line arguments
+for arg in "$@"; do
+    case $arg in
+        -y|--yes)
+            SKIP_CONFIRM=true
+            ;;
+        --no-log-clean)
+            SKIP_LOG_CLEAN=true
+            ;;
+        --no-orphans)
+            SKIP_ORPHANS=true
+            ;;
+        *)
+            echo "Unknown option: $arg"
+            echo "Usage: $0 [-y|--yes] [--no-log-clean] [--no-orphans]"
+            exit 1
+            ;;
+    esac
+done
+
+# Remove old log files if not skipped
+if [ "$SKIP_LOG_CLEAN" = false ]; then
+    OLD_LOGS=$(find "$LOG_DIR" -name "arch-update-*.log" -mtime +14)
+    if [[ -n "$OLD_LOGS" ]]; then
+        echo "The following log files are older than 14 days and can be removed:"
+        echo "$OLD_LOGS"
+        if [ "$SKIP_CONFIRM" = false ]; then
+            read -p "Do you want to remove them? (y/N): " DELETE_LOGS
+        fi
+        if [ "$SKIP_CONFIRM" = true ] || [[ "$DELETE_LOGS" =~ ^[Yy]$ ]]; then
+            find "$LOG_DIR" -name "arch-update-*.log" -mtime +14 -delete
+            echo "Old log files removed."
+        else
+            echo "Old log files kept."
+        fi
+    fi
+fi
+
+# Check for available updates
+echo "Checking for available updates..."
+UPDATES=$(yay -Qu)
+
+if [[ -z "$UPDATES" ]]; then
+    echo "Your system is already up to date!"
+    exit 0
+fi
+
+# Display updates and ask for confirmation
+echo "The following packages will be updated:"
+echo "$UPDATES"
+echo "Log file will be saved to: $LOG_FILE"
+
+if [ "$SKIP_CONFIRM" = false ]; then
+    read -p "Are you sure you want to proceed with the upgrade? (y/N): " CONFIRM
+    if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
+        echo "Upgrade canceled."
+        exit 1
+    fi
+fi
+
+# Start the upgrade
+echo "Starting system upgrade..."
+yay -Syu --noconfirm | tee -a "$LOG_FILE"
+echo "Upgrade complete. Log saved to $LOG_FILE"
+
+# Check for orphaned packages if not skipped
+if [ "$SKIP_ORPHANS" = false ]; then
+    echo "Checking for orphaned packages..."
+    ORPHANS=$(pacman -Qdtq)
+
+    if [[ -n "$ORPHANS" ]]; then
+        echo "The following orphaned packages (unused dependencies) were found:"
+        echo "$ORPHANS"
+        if [ "$SKIP_CONFIRM" = false ]; then
+            read -p "Do you want to remove them? (y/N): " REMOVE_ORPHANS
+        fi
+        if [ "$SKIP_CONFIRM" = true ] || [[ "$REMOVE_ORPHANS" =~ ^[Yy]$ ]]; then
+            sudo pacman -Rns --noconfirm $ORPHANS | tee -a "$LOG_FILE"
+            echo "Orphaned packages removed."
+        else
+            echo "Orphaned packages kept."
+        fi
+    else
+        echo "No orphaned packages found."
+    fi
+fi
+
+echo "System update process completed!"
